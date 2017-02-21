@@ -1,2 +1,0 @@
-# lardmin
-admin for laravel
