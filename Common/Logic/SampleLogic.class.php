@@ -14,6 +14,8 @@ class SampleLogic {
         $this->readWhere = '';
         $this->readFields = '';
         $this->readOrder = '';
+        $this->readTable = '';
+        $this->id_key = false;
     }
 
     /**
@@ -81,11 +83,12 @@ class SampleLogic {
 
             }
             $res = $this->model->addAll($data);
-
         }
 
         if ($res) {
-            return array("status" => RETURN_SUCC, "value" => $res);
+            $res = array("status" => RETURN_SUCC, "value" => $res);
+            $res = $this->postCreate($res, $data);
+            return $res;
         } else {
             if($this::$process) {
                 $this::$process->rollback();
@@ -113,7 +116,28 @@ class SampleLogic {
     public function update($id, $data, $sql = '')
     {
         $data = $this->preUpdate($id, $data);
-        $res = $this->model->where("id = {$id} and status = ".STATUS_OK.$sql)->save($data);
+
+        if (false === $this->model->create($data)) {
+            $this->rollback();
+            return ['status' => RETURN_ERROR, 'value' => "修改失败:".$this->model->getError()];
+        }
+
+        $res = $this->model->where("id = {$id} and status = ".STATUS_OK.$sql)->save();
+
+        if ($res) {
+            return array("status" => RETURN_SUCC, "value" => $res);
+        } else {
+            if($this::$process) {
+                $this::$process->rollback();
+            }
+            return array("status" => RETURN_ERROR, "value" => "修改失败");
+        }
+    }
+
+    public function s_update($id, $data, $sql = '')
+    {
+        $data = $this->preUpdate($id, $data);
+        $res = $this->model->where("id = {$id}".$sql)->save($data);
         if ($res) {
             return array("status" => RETURN_SUCC, "value" => $res);
         } else {
@@ -152,14 +176,20 @@ class SampleLogic {
         return $this;
     }
 
+    public function readTable($sql)
+    {
+        $this->readTable .= $sql;
+        return $this;
+    }
     /**
      * @param string $fields 查询字段名
      * @return $this
      * 查询某些字段
      */
-    public function readFields($fields)
+    public function readFields($fields, $id_key = false)
     {
         $this->readFields = $fields;
+        $this->id_key = $id_key;
         return $this;
     }
 
@@ -189,9 +219,12 @@ class SampleLogic {
         return $this->model->where("status = ".STATUS_OK)->find($id);
     }
 
-    public function findBy($condition)
+    public function findBy($condition,$order = "")
     {
-        return $this->model->where($condition." and status = ".STATUS_OK)->find();
+        if($order == ""){
+            $order = "id desc";
+        }
+        return $this->model->where($condition." and status = ".STATUS_OK)->order($order)->find();
     }
     /**
      * @param $limit_start
@@ -199,13 +232,22 @@ class SampleLogic {
      * @return array
      * 查询
      */
-    public function read($limit_start, $limit_num)
+    public function read($limit_start, $limit_num,$max_id = "")
     {
         if(!$this->readWhere) {
             $this->readWhere = '1=1';
         }
+        if($max_id != ""){
+            $this->readWhere .= " and id < {$max_id}";
+        }
         $this->readWhere .= " and status = ".STATUS_OK;
         $res = $this->model;
+
+
+        if ($this->readTable) {
+            $res = $res->table($this->readTable);
+        }
+
         if ($this->readWhere) {
             $res = $res->where($this->readWhere);
         }
@@ -221,9 +263,67 @@ class SampleLogic {
         if (($limit_start || $limit_start == 0) && $limit_num) {
             $res = $res->limit($limit_start.",".$limit_num);
         }
-        $res = $res
-            ->select();
-        $count = $this->model->where($this->readWhere)->count();
+        if($this->id_key) {
+            $res = $res
+                ->getField($this->readFields);
+        } else {
+            $res = $res
+                ->select();
+        }
+
+        if ($this->readTable) {
+            $count = $this->model->table($this->readTable)->where($this->readWhere)->count();
+        } else {
+            $count = $this->model->where($this->readWhere)->count();
+        }
+
+        if($max_id == ""){
+            $max_id = $this->model->where($this->readWhere)->max("id");
+        }
+        return array("status" => RETURN_SUCC, "value" => array("count" => $count == null ? 0 : $count, "max_id" => $max_id, "list" => $res == null ? array() : $res));
+    }
+
+    public function s_read($limit_start, $limit_num)
+    {
+        if(!$this->readWhere) {
+            $this->readWhere = '1=1';
+        }
+        $res = $this->model;
+
+        if ($this->readTable) {
+            $res = $res->table($this->readTable);
+        }
+
+        if ($this->readWhere) {
+            $res = $res->where($this->readWhere);
+        }
+
+        if ($this->readFields) {
+            $res = $res->field($this->readFields);
+
+      }
+
+        if ($this->readOrder) {
+            $res = $res->order($this->readOrder);
+        }
+
+        if (($limit_start || $limit_start == 0) && $limit_num) {
+            $res = $res->limit($limit_start.",".$limit_num);
+        }
+
+        if($this->id_key) {
+            $res = $res
+                ->getField($this->readFields);
+        } else {
+            $res = $res
+                ->select();
+        }
+
+        if ($this->readTable) {
+            $count = $this->model->table($this->readTable)->where($this->readWhere)->count();
+        } else {
+            $count = $this->model->where($this->readWhere)->count();
+        };
         return array("status" => RETURN_SUCC, "value" => array("count" => $count == null ? 0 : $count, "list" => $res == null ? array() : $res));
     }
 
@@ -240,5 +340,10 @@ class SampleLogic {
     public function preUpdate($id, $data)
     {
         return $data;
+    }
+
+    public function postCreate($res, $data)
+    {
+        return $res;
     }
 }
