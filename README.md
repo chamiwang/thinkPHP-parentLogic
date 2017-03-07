@@ -70,4 +70,4 @@ class OrderRefundLogic extends SampleLogic
         
 ``` 
 
-
+4， 建议将Common/functions.php文件中的D方法，更新原有D方法(原有D方法可能会导致逻辑层封装后出现bug)
