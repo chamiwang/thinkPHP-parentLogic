@@ -7,7 +7,10 @@ namespace Common\Logic;
  */
 class SampleLogic {
     public static $process = '';
-
+    
+    const RETURN_ERROR = 0;
+    const RETURN_SUCC = 1;
+    
     public function __construct()
     {
         $this->model = D($this->getLogicName());
@@ -124,20 +127,26 @@ class SampleLogic {
 
         $res = $this->model->where("id = {$id} and status = ".STATUS_OK.$sql)->save();
 
-        if ($res) {
-            return array("status" => RETURN_SUCC, "value" => $res);
-        } else {
-            if($this::$process) {
+        if ($res === false) {
+           if($this::$process) {
                 $this::$process->rollback();
             }
             return array("status" => RETURN_ERROR, "value" => "修改失败");
+        } else {
+            return array("status" => RETURN_SUCC, "value" => $res);
         }
     }
 
     public function s_update($id, $data, $sql = '')
     {
         $data = $this->preUpdate($id, $data);
-        $res = $this->model->where("id = {$id}".$sql)->save($data);
+
+        if (false === $this->model->create($data)) {
+            $this->rollback();
+            return ['status' => RETURN_ERROR, 'value' => "修改失败:".$this->model->getError()];
+        }
+
+        $res = $this->model->where("id = {$id}".$sql)->save();
         if ($res) {
             return array("status" => RETURN_SUCC, "value" => $res);
         } else {
@@ -214,9 +223,18 @@ class SampleLogic {
         return $this->model->where($this->readWhere.$sql." and status = ".STATUS_OK)->getField("sum({$field}) as sum");
     }
 
+    public function readCount($sql = "")
+    {
+        return $this->model->where($this->readWhere.$sql." and status = ".STATUS_OK)->count();
+    }
+
     public function find($id)
     {
         return $this->model->where("status = ".STATUS_OK)->find($id);
+    }
+    public function s_find($id, $sql)
+    {
+        return $this->model->where($sql)->find($id);
     }
 
     public function findBy($condition,$order = "")
@@ -238,7 +256,7 @@ class SampleLogic {
             $this->readWhere = '1=1';
         }
         if($max_id != ""){
-            $this->readWhere .= " and id < {$max_id}";
+            $this->readWhere .= " and id <= {$max_id}";
         }
         $this->readWhere .= " and status = ".STATUS_OK;
         $res = $this->model;
@@ -280,7 +298,7 @@ class SampleLogic {
         if($max_id == ""){
             $max_id = $this->model->where($this->readWhere)->max("id");
         }
-        return array("status" => RETURN_SUCC, "value" => array("count" => $count == null ? 0 : $count, "max_id" => $max_id, "list" => $res == null ? array() : $res));
+        return array("status" => RETURN_SUCC, "value" => array("count" => $count ? $count : 0, "max_id" => $max_id ? $max_id : 0, "list" => $res == null ? array() : $res));
     }
 
     public function s_read($limit_start, $limit_num)
